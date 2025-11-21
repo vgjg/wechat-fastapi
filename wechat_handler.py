@@ -16,9 +16,9 @@ class WeChatHandler:
     # 🚨🚨 请替换为您自己的微信公众号配置信息 🚨🚨
     def __init__(self, essay_handler: EssayHandler):
         # ⚠️ 替换为您的配置 ⚠️
-        self.token = "zhengyi"
-        self.app_id = "wxe06cdfc423a3c0af"
-        self.app_secret = "3655f336f61254d20a736a23ca299c55"
+        self.token = "自己的token"
+        self.app_id = "微信公众平台获取"
+        self.app_secret = "微信公众平台获取"
 
         self.essay_handler = essay_handler
 
