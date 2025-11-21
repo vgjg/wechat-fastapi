@@ -2,6 +2,8 @@ import hashlib
 import time
 import xml.etree.ElementTree as ET
 import logging
+from datetime import datetime
+
 import requests
 import json
 from typing import Tuple, Optional, Set
@@ -14,9 +16,9 @@ class WeChatHandler:
     # 🚨🚨 请替换为您自己的微信公众号配置信息 🚨🚨
     def __init__(self, essay_handler: EssayHandler):
         # ⚠️ 替换为您的配置 ⚠️
-        self.token = "YOUR_WECHAT_TOKEN"
-        self.app_id = "YOUR_WECHAT_APPID"
-        self.app_secret = "YOUR_WECHAT_APPSECRET"
+        self.token = "zhengyi"
+        self.app_id = "wxe06cdfc423a3c0af"
+        self.app_secret = "3655f336f61254d20a736a23ca299c55"
 
         self.essay_handler = essay_handler
 
@@ -76,6 +78,7 @@ class WeChatHandler:
             return False
 
         url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
+
         message_data = {
             "touser": openid,
             "msgtype": "text",
@@ -85,13 +88,20 @@ class WeChatHandler:
         }
 
         try:
-            # 使用 try/except 配合 requests 确保网络请求健壮性
-            response = requests.post(url, json=message_data, timeout=5)
+            # 明确指定 headers 和编码
+            headers = {
+                'Content-Type': 'application/json; charset=utf-8'
+            }
+
+            # 使用 ensure_ascii=False 确保中文不被转义
+            json_data = json.dumps(message_data, ensure_ascii=False).encode('utf-8')
+
+            response = requests.post(url, data=json_data, headers=headers, timeout=5)
             response.raise_for_status()
             data = response.json()
 
             if data.get("errcode") == 0:
-                logger.debug(f"成功向 OpenID {openid} 发送客服消息。")
+                logger.info(f"成功向 OpenID {openid} 发送客服消息。")
                 return True
             else:
                 logger.error(f"向 OpenID {openid} 发送消息失败，微信返回错误: {data}")
@@ -132,24 +142,49 @@ class WeChatHandler:
             to_user = xml_tree.find('ToUserName').text
             from_user = xml_tree.find('FromUserName').text
             msg_type = xml_tree.find('MsgType').text
+            create_time = xml_tree.find('CreateTime').text # Unix 时间戳
 
-            # 记录用户的 OpenID
+            # 记录用户的 OpenID (保持不变)
             if from_user:
                 self.essay_handler.save_openid(from_user)
 
+            # --- 新增：提取消息数据并保存到 Excel ---
+
+            # 基础数据
+            message_data = {
+                '接收时间': datetime.fromtimestamp(int(create_time)).strftime("%Y-%m-%d %H:%M:%S"),
+                '发送者ID': from_user,
+                '消息类型': msg_type,
+                '消息内容': '', # 默认为空
+            }
+
             reply_content = ""
+
             if msg_type == 'text':
                 user_msg = xml_tree.find('Content').text
+                message_data['消息内容'] = user_msg # 记录文本内容
+                self.essay_handler.save_message_to_excel(message_data) # 保存到 Excel
+
                 reply_content = f"您已发送消息：[{user_msg}]。\n\n当前系统专注于论文信息收集和展示，如有需要，请访问Web页面进行操作。"
+
             elif msg_type == 'event':
                 event = xml_tree.find('Event').text
+                message_data['消息内容'] = f"事件: {event}" # 记录事件类型
+                self.essay_handler.save_message_to_excel(message_data) # 保存到 Excel
+
                 if event == 'subscribe':
                     reply_content = "欢迎关注！您的 OpenID 已记录，我们将及时向您推送最新的论文信息摘要。请访问Web页面提交论文信息。"
                 else:
                     reply_content = "当前系统已记录您的ID。发送任意消息可重新触发推送。"
-            else:
-                reply_content = "当前系统仅支持文本消息。"
 
+            else:
+                # 记录其他消息类型（如图片、语音等）
+                message_data['消息内容'] = f"不支持的消息格式"
+                self.essay_handler.save_message_to_excel(message_data) # 保存到 Excel
+
+                reply_content = f"当前系统收到 {msg_type} 消息，但仅支持文本消息。"
+
+            # --- 生成回复 XML ---
             reply_xml = self._generate_reply_xml(from_user, to_user, reply_content)
             return reply_xml, "application/xml"
 

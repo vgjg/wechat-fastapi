@@ -4,6 +4,7 @@ from typing import Optional
 import json
 from datetime import datetime
 
+import uvicorn
 # 导入 FastAPI 核心模块
 from fastapi import FastAPI, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
@@ -224,9 +225,7 @@ async def submit_essay(
 
 @app.post("/push_all_essays")
 async def push_all_essays():
-    """
-    处理主动推送请求的路由。（无 JavaScript 实现）
-    """
+    """处理主动推送请求的路由。"""
     logger.info("开始执行主动推送所有最新论文信息的任务...")
 
     try:
@@ -238,12 +237,14 @@ async def push_all_essays():
             logger.warning("没有可推送的论文信息。")
             return RedirectResponse(url="/?push_status=no_essay", status_code=303)
 
-        # 2. 格式化推送内容
+        # 2. 格式化推送内容 - 使用普通字符串，不要用 Unicode 转义
         push_content = f"【最新论文推送】\n\n" \
                        f"标题: 《{latest_essay.get('论文标题', 'N/A')}》\n" \
                        f"作者: {latest_essay.get('作者', 'N/A')}\n" \
                        f"章节: {latest_essay.get('章节', 'N/A')}\n" \
                        f"提交时间: {latest_essay.get('提交时间', 'N/A')}"
+
+        logger.info(f"推送内容: {push_content}")
 
         # 3. 获取所有 OpenID
         all_openids = essay_handler.get_all_openids()
@@ -252,17 +253,15 @@ async def push_all_essays():
         success_count, failure_count = wechat_handler.push_to_all_subscribers(push_content, all_openids)
 
         if success_count > 0:
-            # 成功后，重定向回主页，并带上成功状态
+            logger.info(f"推送成功: {success_count} 条")
             return RedirectResponse(url="/?push_status=success", status_code=303)
         else:
-            # 失败后，重定向回主页，并带上错误状态
+            logger.error("推送失败: 0 条成功")
             return RedirectResponse(url="/?push_status=error", status_code=303)
 
     except Exception as e:
         logger.error(f"推送过程中发生致命错误: {e}")
-        # 发生异常，重定向回主页，并带上错误状态
         return RedirectResponse(url="/?push_status=error", status_code=303)
-
 
 # 微信服务器验证接口（保持不变）
 @app.get("/wechat")
@@ -279,3 +278,11 @@ async def wechat_message(request: Request):
     body = await request.body()
     reply_xml, content_type = wechat_handler.process_and_reply(body)
     return PlainTextResponse(content=reply_xml, media_type=content_type)
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True
+    )
